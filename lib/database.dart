@@ -9,6 +9,7 @@ const DATABASE_FILENAME = 'binks.db';
 
 const TABLE_MOOD = 'mood';
 const TABLE_MOOD_TAG = 'mood_tag';
+const TABLE_PHOTO = 'photo';
 const TABLE_TAG = 'tag';
 
 class Database {
@@ -69,6 +70,17 @@ class Database {
         )
         ''')
       ],
+      5: [
+        // TODO: Change blake3 to checksum
+        SqlMigration('''
+        CREATE TABLE IF NOT EXISTS $TABLE_PHOTO (
+          id VARCHAR PRIMARY KEY,
+          blake3 VARCHAR NOT NULL,
+          created_at TIMESTAMP NOT NULL,
+          touched_at TIMESTAMP NOT NULL
+        )
+        ''', reverseSql: 'DROP TABLE $TABLE_PHOTO')
+      ]
     });
 
     var database = await openDatabase(
@@ -76,7 +88,7 @@ class Database {
       onCreate: migrationPlan,
       onDowngrade: migrationPlan,
       onUpgrade: migrationPlan,
-      version: 3,
+      version: 5,
     );
 
     log('Finished migrating database to version ${await database.getVersion()}');

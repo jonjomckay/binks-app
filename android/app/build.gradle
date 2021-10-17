@@ -40,7 +40,7 @@ if (keystoreFile != null && !keystoreFile.isEmpty()) {
 }
 
 android {
-    compileSdkVersion 30
+    compileSdkVersion rootProject.ext.compileSdkVersion
 
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
@@ -49,7 +49,7 @@ android {
     defaultConfig {
         applicationId "com.jonjomckay.binks"
         minSdkVersion 16
-        targetSdkVersion 30
+        targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
     }

@@ -1,12 +1,10 @@
-import 'dart:convert';
-
-import 'package:binks/main.dart';
+import 'package:binks/contacts/contacts_model.dart';
 import 'package:binks/photos/fragments/fragment_albums.dart';
+import 'package:binks/photos/people/fragment_people.dart';
 import 'package:binks/photos/fragments/fragment_photos.dart';
 import 'package:binks/photos/fragments/fragment_places.dart';
 import 'package:binks/photos/fragments/fragment_upload.dart';
 import 'package:binks/photos/photos_model.dart';
-import 'package:extended_image/extended_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:salomon_bottom_bar/salomon_bottom_bar.dart';
@@ -34,7 +32,7 @@ class _PhotosScreenState extends State<PhotosScreen> {
       FragmentPhotos(scrollController: _scrollController),
       FragmentAlbums(scrollController: _scrollController),
       FragmentPlaces(scrollController: _scrollController),
-      Container()
+      FragmentPeople(scrollController: _scrollController)
     ];
   }
 
@@ -64,6 +62,8 @@ class _PhotosScreenState extends State<PhotosScreen> {
             icon: Icon(Icons.refresh),
             onPressed: () async {
               await context.read<PhotosModel>().reloadData();
+              // TODO: This shouldn't be here
+              await context.read<ContactsModel>().reloadData();
             },
           ),
           IconButton(
@@ -212,23 +212,5 @@ class DrawerItem extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-
-class PhotoPreview extends StatelessWidget {
-  final int id;
-  final int width;
-  final int height;
-
-  const PhotoPreview({Key? key, required this.id, required this.width, required this.height}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    var uri = 'http://${HOSTNAME}/photos/api/v1/photos/$id/preview/?width=$width&height=$height';
-
-    return ExtendedImage.network(uri, fit: BoxFit.cover, headers: {
-      'Authorization': AUTH_HEADER
-    });
   }
 }

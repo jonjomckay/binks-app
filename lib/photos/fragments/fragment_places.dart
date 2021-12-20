@@ -1,6 +1,7 @@
 import 'package:binks/extensions/iterables.dart';
 import 'package:binks/photos/photos_model.dart';
 import 'package:binks/photos/photos_screen.dart';
+import 'package:binks/photos/place_screen.dart';
 import 'package:binks/ui/grids.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -17,21 +18,33 @@ class FragmentPlaces extends StatelessWidget {
       builder: (context, model, child) {
         var items = model.places;
 
-        List<StaggeredGridWithSectionItem<String?, Place?>> placeOrCountries = [];
+        List<StaggeredGridWithSectionItem<String?, Area?>> areaOrCountries = [];
 
         var groups = items.groupBy((e) => e.country);
         var countries = groups.keys.toList(growable: false);
 
         for (var country in countries) {
-          placeOrCountries.add(StaggeredGridWithSectionItem(country, null));
+          areaOrCountries.add(StaggeredGridWithSectionItem(country, null));
+
+          Map<String, Area> areas = {};
 
           for (var place in groups[country]!) {
-            placeOrCountries.add(StaggeredGridWithSectionItem(null, place));
+            // TODO: This could end up putting 2 different areas in the same country with the same name together, which isn't great
+            var key = '${place.area},${place.country}';
+            if (areas.containsKey(key)) {
+              areas[key]!.numberOfPhotos += place.numberOfPhotos;
+            } else {
+              areas[key] = Area(area: place.area, country: place.country, numberOfPhotos: place.numberOfPhotos);
+            }
+          }
+
+          for (var city in areas.values.sorted((a, b) => a.area?.compareTo(b.area ?? '') ?? 0)) {
+            areaOrCountries.add(StaggeredGridWithSectionItem(null, city));
           }
         }
 
-        return StaggeredGridWithSections<String?, Place?>(
-          items: placeOrCountries,
+        return StaggeredGridWithSections<String?, Area?>(
+          items: areaOrCountries,
           crossAxisCount: 3,
           scrollController: scrollController,
           nameBuilder: (context, item) {
@@ -47,24 +60,23 @@ class FragmentPlaces extends StatelessWidget {
           },
           itemBuilder: (context, item) {
             var plural = Intl.plural(item!.numberOfPhotos, one: 'photo', other: 'photos');
-            var coverPhoto = item.coverPhoto;
+            // var coverPhoto = item.coverPhoto;
 
             return GestureDetector(
-              // onTap: () => Navigator.push(context,
-              //     MaterialPageRoute(builder: (context) =>
-              //         PlacePage(id: item.id))),
+              onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (context) =>
+                      CityScreen(area: item))),
               child: GridTileWithBackgroundImage(
-                image: coverPhoto == null
-                    ? Container()
-                    : PhotoPreview(id: coverPhoto, width: 256, height: 256),
-                title: item.name,
+                image: Container(),
+                // TODO: This definitely isn't the right way
+                title: item.area ?? 'Unknown',
                 subtitle: '${item.numberOfPhotos} $plural',
               ),
             );
           },
           scrollLabelBuilder: (context, item) {
             return item.name == null
-                ? item.item!.name
+                ? item.item!.area ?? 'Unknown'
                 : item.name!;
           },
         );

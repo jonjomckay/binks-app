@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:async_builder/async_builder.dart';
 import 'package:background_fetch/background_fetch.dart';
+import 'package:binks/contacts/contacts_model.dart';
 import 'package:binks/database.dart';
 import 'package:binks/mood/mood_model.dart';
 import 'package:binks/mood/mood_screen.dart';
@@ -13,7 +14,7 @@ import 'package:binks/photos/photos_model.dart';
 import 'package:binks/photos/photos_screen.dart';
 import 'package:binks/routes.dart';
 import 'package:binks/sync.dart';
-import 'package:extended_image/extended_image.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
@@ -44,7 +45,10 @@ void backgroundFetchHeadlessTask(HeadlessTask task) async {
 }
 
 void main() {
-  var photosModel = PhotosModel();
+  var dio = Dio(BaseOptions(
+    // connectTimeout: 5000,
+  ));
+  var photosModel = PhotosModel(dio);
 
   Sync.instance.setPhotosModel(photosModel);
 
@@ -52,8 +56,14 @@ void main() {
     providers: [
       ChangeNotifierProvider<MoodModel>(create: (context) => MoodModel()),
       ChangeNotifierProvider<MusicModel>(create: (context) => MusicModel()),
-      ChangeNotifierProvider<PhotosModel>(create: (context) => photosModel),
       ChangeNotifierProvider<TagModel>(create: (context) => TagModel()),
+
+      // Contacts
+      ChangeNotifierProvider<ContactsModel>(create: (context) => ContactsModel(dio)),
+
+      // Photos
+      ChangeNotifierProvider<CurrentPhotoModel>(create: (context) => CurrentPhotoModel(photosModel: photosModel)),
+      ChangeNotifierProvider<PhotosModel>(create: (context) => photosModel),
     ],
     child: MyApp(),
   ));

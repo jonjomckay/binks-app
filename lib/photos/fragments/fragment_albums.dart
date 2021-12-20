@@ -1,12 +1,9 @@
-import 'package:animated_item_picker/animated_item_picker.dart';
-import 'package:binks/photos/fragments/fragment_photos.dart';
+import 'package:binks/photos/photo_preview.dart';
 import 'package:binks/photos/photos_model.dart';
-import 'package:binks/photos/photos_screen.dart';
 import 'package:binks/ui/grids.dart';
 import 'package:drag_select_grid_view/drag_select_grid_view.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:item_selector/item_selector.dart';
 import 'package:multiselect_scope/multiselect_scope.dart';
 import 'package:provider/provider.dart';
 
@@ -99,7 +96,7 @@ class _CreateAlbumDialogState extends State<CreateAlbumDialog> {
                       return Text('Selected');
                     }
 
-                    return PhotoPreview(id: photo.id, width: 256, height: 256);
+                    return PhotoPreview(photo: photo, width: 256, height: 256, fit: BoxFit.cover);
                   },
                   gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 140,
@@ -200,7 +197,7 @@ class FragmentAlbums extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // TODO: This should disappear and reappear on page switch, not swipe with the page
+      // TODO: This button should disappear and reappear on page switch, not swipe with the page
       floatingActionButton: FloatingActionButton(
           child: Icon(Icons.add),
           onPressed: () {
@@ -223,16 +220,13 @@ class FragmentAlbums extends StatelessWidget {
             nameBuilder: (context, item) => Container(),
             itemBuilder: (context, item) {
               var plural = Intl.plural(item!.numberOfPhotos, one: 'photo', other: 'photos');
-              var coverPhoto = item.coverPhoto;
 
               return GestureDetector(
                 // onTap: () => Navigator.push(context,
                 //     MaterialPageRoute(builder: (context) =>
                 //         PlacePage(id: item.id))),
                 child: GridTileWithBackgroundImage(
-                  image: coverPhoto == null
-                      ? Container()
-                      : PhotoPreview(id: coverPhoto, width: 256, height: 256),
+                  image: Container(),
                   title: item.name,
                   subtitle: '${item.numberOfPhotos} $plural',
                 ),

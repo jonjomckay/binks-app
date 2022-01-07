@@ -16,7 +16,7 @@ class FragmentPerson extends StatelessWidget {
         var photoIds = person.faces.map((e) => e.photo).toList();
         var photos = model.photos
             .where((element) => element.location == PhotoLocation.Remote)
-            .where((photo) => photoIds.contains(photo.id))
+            .where((photo) => photoIds.contains(photo.remoteId))
             .toList();
 
         return PhotoList(scrollController: ScrollController(), photos: photos);

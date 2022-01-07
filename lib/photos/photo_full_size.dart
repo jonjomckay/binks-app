@@ -27,8 +27,9 @@ class _PhotoFullSizeState extends State<PhotoFullSize> with TickerProviderStateM
     super.dispose();
   }
 
-  Future<File?> getLocalImage(int id) async {
-    var asset = await PhotoManager.refreshAssetProperties(id.toString());
+  // TODO: This is duplicated
+  Future<File?> getLocalImage(String id) async {
+    var asset = await PhotoManager.refreshAssetProperties(id);
     if (asset == null) {
       return null;
     }
@@ -71,7 +72,7 @@ class _PhotoFullSizeState extends State<PhotoFullSize> with TickerProviderStateM
   @override
   Widget build(BuildContext context) {
     if (widget.photo.location == PhotoLocation.Remote) {
-      return ExtendedImage.network('http://${HOSTNAME}/photos/api/v1/photos/${widget.photo.id}/download/',
+      return ExtendedImage.network('http://${HOSTNAME}/photos/api/v1/photos/${widget.photo.remoteId}/download/',
           headers: {'Authorization': AUTH_HEADER},
           enableLoadState: true,
           mode: ExtendedImageMode.gesture,
@@ -81,7 +82,8 @@ class _PhotoFullSizeState extends State<PhotoFullSize> with TickerProviderStateM
     }
 
     return FutureBuilder<File?>(
-      future: getLocalImage(widget.photo.id),
+      // TODO: Null safety
+      future: getLocalImage(widget.photo.localId!),
       builder: (context, snapshot) {
         var data = snapshot.data;
         if (data == null) {

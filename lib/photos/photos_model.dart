@@ -136,15 +136,20 @@ class PhotosModel extends ChangeNotifier {
   Future<void> reloadPhotos({bool notify = false}) async {
     log('Listing all photos');
 
-    await enumerateLocalPhotos((error, [stackTrace]) async {
+    var startedAt = DateTime.now();
+
+    await enumerateLocalPhotos(startedAt, (error, [stackTrace]) async {
       log('Something broke', error: error, stackTrace: stackTrace);
     }).value;
 
     var database = await Database.writable();
 
-    var localPhotos = (await database.query(TABLE_PHOTO))
+    // TODO: Do I need to fetch the entire photo here? We do it again later
+    var existingPhotos = (await database.query(TABLE_PHOTO))
         .map((e) => Photo.fromLocal(e))
         .toSet();
+
+    var existingChecksums = Map.fromEntries(existingPhotos.map((e) => MapEntry(e.checksum, e.localId)));
 
     var content =
         await requestGet(dio, '/photos/api/v1/photos/', limit: 999999, offset: 0);
@@ -153,15 +158,39 @@ class PhotosModel extends ChangeNotifier {
         .map((e) => Photo.fromRemote(e))
         .toSet();
 
-    for (var localPhoto in localPhotos) {
-      if (remotePhotos.contains(localPhoto)) {
-        continue;
-      }
+    // for (var localPhoto in localPhotos) {
+    //   if (remotePhotos.contains(localPhoto)) {
+    //     continue;
+    //   }
+    //
+    //   remotePhotos.add(localPhoto);
+    // }
 
-      remotePhotos.add(localPhoto);
+    // Store the photos locally
+    var batch = database.batch();
+
+    // batch.delete(TABLE_PHOTO, where: 'location = ?', whereArgs: ['remote']);
+
+    for (var remotePhoto in remotePhotos) {
+      if (existingChecksums.containsKey(remotePhoto.checksum)) {
+        var localId = existingChecksums[remotePhoto.checksum];
+
+        batch.update(TABLE_PHOTO, {
+          ...remotePhoto.toMap(localId: localId),
+          'touched_at': startedAt.millisecondsSinceEpoch,
+        }, where: 'local_id = ?', whereArgs: [localId]);
+      } else {
+        batch.insert(TABLE_PHOTO, {
+          ...remotePhoto.toMap(),
+          'touched_at': startedAt.millisecondsSinceEpoch
+        });
+      }
     }
 
-    _photos = remotePhotos
+    await batch.commit();
+
+    _photos = (await database.query(TABLE_PHOTO))
+        .map((e) => Photo.fromDatabase(e))
         .sorted((a, b) => b.modifiedAt.compareTo(a.modifiedAt))
         .toSet()
         .toList();
@@ -182,24 +211,36 @@ class PhotosModel extends ChangeNotifier {
     }
   }
 
-  CancelableOperation<void> enumerateLocalPhotos(
+  // TODO: This always checksums new photos, which is quite intense. Therefore on first refresh, nothing is shown for ages
+  CancelableOperation<void> enumerateLocalPhotos(DateTime startedAt,
       Function(Object, [StackTrace?]) onError) {
     return CancelableOperation.fromFuture(Future(() async {
       try {
         log('Enumerating all local photos');
 
         var database = await Database.writable();
-        var beginsAt = DateTime.now();
 
-        var albums = await PhotoManager.getAssetPathList(
-            hasAll: true, onlyAll: true, type: RequestType.image);
-        var photos = (await database.query(TABLE_PHOTO, columns: ['id']))
-            .map((e) => e['id'] as String)
+        // await database.delete(TABLE_PHOTO);
+
+        var albums = await PhotoManager.getAssetPathList(hasAll: true, onlyAll: true, type: RequestType.image);
+        var localPhotos = (await database.query(TABLE_PHOTO, columns: ['local_id'], where: 'local_id IS NOT NULL'))
+            .map((e) => e['local_id'] as String)
+            .distinctBy((e) => e)
             .toSet();
+
+        // var remotePhotos = (await database.query(TABLE_PHOTO, columns: ['remote_id']))
+        //     .map((e) => e['remote_id'] as String)
+        //     .distinctBy((e) => e)
+        //     .toSet();
+
+        var checksums = Map.fromEntries((await database.query(TABLE_PHOTO, columns: ['id', 'checksum']))
+            .map((e) => MapEntry(e['checksum'] as String, e['id'] as int))
+            .toSet());
 
         for (var album in albums) {
           var pageSize = 50;
           var maxPages = (album.assetCount / pageSize).ceil();
+          // var maxPages = 3;
 
           for (var page = 0; page <= maxPages; page++) {
             var items = await album.getAssetListPaged(page, pageSize);
@@ -211,10 +252,19 @@ class PhotosModel extends ChangeNotifier {
                 return;
               }
 
-              if (photos.contains(item.id)) {
-                batch.update(TABLE_PHOTO,
-                    {'touched_at': beginsAt.millisecondsSinceEpoch},
-                    where: 'id = ?', whereArgs: [item.id]);
+              var data = {
+                'name': item.title ?? await item.titleAsync,
+                'location': 'local',
+                'local_id': item.id,
+                'width': item.width,
+                'height': item.height,
+                'modified_at': item.modifiedDateTime.millisecondsSinceEpoch,
+                'touched_at': startedAt.millisecondsSinceEpoch
+              };
+
+              // If we already have this local photo stored, update it with the metadata
+              if (localPhotos.contains(item.id)) {
+                batch.update(TABLE_PHOTO, data, where: 'local_id = ?', whereArgs: [item.id]);
                 continue;
               }
 
@@ -224,13 +274,26 @@ class PhotosModel extends ChangeNotifier {
                 continue;
               }
 
-              var hash = rHash.filePath(HashType.blake3(), file.path);
+              // TODO: This is run for photos that are both local and remote, but it shouldn't be. It should only be for new photos
 
+              // TODO: This takes a while on first run, so provide a notification or something with progress
+              // TODO: Do we need to wait for this to finish before listing local photos? I don't think so
+              log('Generating checksum for ${file.path}');
+
+              var hash = convert(rHash.filePath(HashType.blake3(), file.path));
+
+              // If we already have the checksum, but it's not a local photo, it means we have it as a remote photo
+              if (checksums.containsKey(hash)) {
+                batch.update(TABLE_PHOTO, data, where: 'id = ?', whereArgs: [checksums[hash]]);
+                continue;
+              }
+
+              // Otherwise, we need to actually just insert the local photo
               batch.insert(TABLE_PHOTO, {
-                'id': item.id,
-                'blake3': convert(hash),
-                'created_at': item.createDateTime.millisecondsSinceEpoch,
-                'touched_at': beginsAt.millisecondsSinceEpoch
+                ...data,
+                'local_id': item.id,
+                'checksum': hash,
+                'created_at': item.createDateTime.millisecondsSinceEpoch
               });
             }
 
@@ -240,8 +303,9 @@ class PhotosModel extends ChangeNotifier {
 
         // Now remove any old local photos from the database that no longer exist
         var deleted = await database.delete(TABLE_PHOTO,
-            where: 'touched_at != ?',
-            whereArgs: [beginsAt.millisecondsSinceEpoch]);
+            where: 'touched_at != ? AND remote_id IS NULL',
+            whereArgs: [startedAt.millisecondsSinceEpoch]);
+
         log('Finished, and removed $deleted old photos');
       } catch (e, stackTrace) {
         await onError(e, stackTrace);
@@ -268,7 +332,9 @@ class PhotosModel extends ChangeNotifier {
     return CancelableOperation.fromFuture(Future(() async {
       await onNext(UploadProgress(UploadStatus.STARTING, 1, 1));
 
-      await enumerateLocalPhotos(onError).valueOrCancellation();
+      var startedAt = DateTime.now();
+
+      await enumerateLocalPhotos(startedAt, onError).valueOrCancellation();
       await uploadAllPhotos(onNext, onDone, onError).valueOrCancellation();
     }), onCancel: () async {
       cancelSync = true;
@@ -306,8 +372,8 @@ class PhotosModel extends ChangeNotifier {
 
         // If any images with the same checksum exist, we don't need to upload them
         var photosToUpload =
-            (await database.query(TABLE_PHOTO, columns: ['id', 'blake3']))
-                .where((e) => !existingChecksums.contains(e['blake3']))
+            (await database.query(TABLE_PHOTO, columns: ['item_id', 'checksum']))
+                .where((e) => !existingChecksums.contains(e['checksum']))
                 .toList();
 
         total = photosToUpload.length;
@@ -319,9 +385,9 @@ class PhotosModel extends ChangeNotifier {
 
           await onNext(UploadProgress(UploadStatus.RUNNING, done, total));
 
-          log('Uploading ${photo['id']}');
+          log('Uploading ${photo['item_id']}');
 
-          var item = await AssetEntity.fromId(photo['id'] as String);
+          var item = await AssetEntity.fromId(photo['item_id'] as String);
           if (item == null) {
             continue;
           }
@@ -343,7 +409,7 @@ class PhotosModel extends ChangeNotifier {
                 data: formData,
                 options: Options(headers: {'Authorization': AUTH_HEADER}));
           } catch (e, stackTrace) {
-            log('Unable to upload ${photo['id']}', error: e, stackTrace: stackTrace);
+            log('Unable to upload ${photo['item_id']}', error: e, stackTrace: stackTrace);
           }
 
           // TODO
@@ -546,6 +612,8 @@ enum PhotoLocation {
 
 class Photo {
   final int id;
+  final String? localId;
+  final int? remoteId;
   final String name;
   final bool favourite;
   final String? caption;
@@ -560,6 +628,8 @@ class Photo {
 
   Photo(
       {required this.id,
+      this.localId,
+      this.remoteId,
       required this.name,
       this.favourite = false,
       this.caption,
@@ -582,16 +652,35 @@ class Photo {
   @override
   int get hashCode => checksum.hashCode;
 
+  factory Photo.fromDatabase(Map<String, dynamic> map) {
+    return Photo(
+        id: map['id'], // TODO
+        localId: map['local_id'],
+        remoteId: map['remote_id'] == null ? null : int.parse(map['remote_id']),
+        name: map['name'],
+        favourite: map['favourite'] == 1,
+        caption: map['caption'],
+        location: map['location'] == 'local' ? PhotoLocation.Local : PhotoLocation.Remote,
+        width: map['width'],
+        height: map['height'],
+        placeId: map['place'] == null ? null : map['place']['id'],
+        checksum: map['checksum'],
+        exifData: map['exif_data'],
+        modifiedAt: DateTime.fromMillisecondsSinceEpoch(map['modified_at']),
+        uploadedAt: DateTime.fromMillisecondsSinceEpoch(map['touched_at']));
+  }
+
   factory Photo.fromLocal(Map<String, dynamic> map) {
     return Photo(
-        id: int.parse(map['id'] as String),
+        id: map['id'],
+        localId: map['local_id'] as String?,
         // TODO: Name needs to be inserted into the database, so we can use it here
         name: '',
         location: PhotoLocation.Local,
         // TODO: Dimensions need to be inserted into the database, so we can use them here
         width: 0,
         height: 0,
-        checksum: map['blake3'] as String,
+        checksum: map['checksum'] as String,
         exifData: null, // TODO
         modifiedAt: DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
         uploadedAt: DateTime.fromMillisecondsSinceEpoch(map['touched_at'] as int)
@@ -600,7 +689,8 @@ class Photo {
 
   factory Photo.fromRemote(Map<String, dynamic> map) {
     return Photo(
-        id: map['id'],
+        id: -1, // TODO
+        remoteId: map['id'],
         name: map['name'],
         favourite: map['favourite'],
         caption: map['caption'],
@@ -612,6 +702,23 @@ class Photo {
         exifData: map['exif_data'],
         modifiedAt: DateTime.parse(map['modified_at']),
         uploadedAt: DateTime.parse(map['uploaded_at']));
+  }
+
+  Map<String, dynamic> toMap({String? localId, int? remoteId}) {
+    return {
+      'local_id': localId ?? this.localId,
+      'remote_id': remoteId ?? this.remoteId,
+      'name': name,
+      'favourite': favourite ? 1 : 0,
+      'caption': caption,
+      'location': location == PhotoLocation.Local ? 'local' : 'remote',
+      'width': width,
+      'height': height,
+      'place_id': placeId,
+      'checksum': checksum,
+      'modified_at': modifiedAt.millisecondsSinceEpoch,
+      'created_at': uploadedAt.millisecondsSinceEpoch
+    };
   }
 }
 

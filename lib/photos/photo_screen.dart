@@ -13,7 +13,7 @@ class LocalImageProvider extends ImageProvider<Photo> {
   LocalImageProvider(this.photo);
 
   // TODO: This is duplicated
-  Future<Uint8List?> _getLocalThumb(int id) async {
+  Future<Uint8List?> _getLocalThumb(String id) async {
     var asset = await PhotoManager.refreshAssetProperties(id.toString());
     if (asset == null) {
       return null;
@@ -27,8 +27,8 @@ class LocalImageProvider extends ImageProvider<Photo> {
     return MultiFrameImageStreamCompleter(
         scale: 1,
         codec: Future(() async {
-          // TODO: Dimensions
-          var result = await _getLocalThumb(key.id);
+          // TODO: Dimensions, null safety
+          var result = await _getLocalThumb(key.localId!);
           if (result == null) {
             // TODO
             return decode(Uint8List(0));

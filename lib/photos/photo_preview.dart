@@ -15,8 +15,8 @@ class PhotoPreview extends StatelessWidget {
 
   const PhotoPreview({Key? key, required this.photo, required this.width, required this.height, required this.fit, this.showIcon = true}) : super(key: key);
 
-  Future<Uint8List?> getLocalThumb(int id, double width, double height) async {
-    var asset = await PhotoManager.refreshAssetProperties(id.toString());
+  Future<Uint8List?> getLocalThumb(String id, double width, double height) async {
+    var asset = await PhotoManager.refreshAssetProperties(id);
     if (asset == null) {
       return null;
     }
@@ -26,7 +26,7 @@ class PhotoPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var uri = 'http://${HOSTNAME}/photos/api/v1/photos/${photo.id}/preview/?width=${width.toInt()}&height=${height.toInt()}';
+    var uri = 'http://${HOSTNAME}/photos/api/v1/photos/${photo.remoteId}/preview/?width=${width.toInt()}&height=${height.toInt()}';
 
     // TODO: Extract and const?
     final loading = Container(
@@ -45,7 +45,8 @@ class PhotoPreview extends StatelessWidget {
             width: width,
             height: height,
             child: FutureBuilder<Uint8List?>(
-              future: getLocalThumb(photo.id, width, height),
+              // TODO: Null safety
+              future: getLocalThumb(photo.localId!, width, height),
               builder: (context, snapshot) {
                 var data = snapshot.data;
                 if (data == null) {
